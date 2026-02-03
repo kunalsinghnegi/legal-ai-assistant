@@ -16,16 +16,16 @@ interface DashboardSidebarProps {
 const clientItems: SidebarItem[] = [
   { icon: Home, label: "Dashboard", href: "/client-dashboard" },
   { icon: MessageSquare, label: "Chat with AI", href: "/chat-ai" },
-  { icon: Users, label: "Recommended Lawyers", href: "/client-dashboard#lawyers" },
-  { icon: FolderOpen, label: "My Case Summary", href: "/client-dashboard#cases" },
-  { icon: Calendar, label: "Appointments", href: "/client-dashboard#appointments" },
+  { icon: Users, label: "Recommended Lawyers", href: "/client/recommended-lawyers" },
+  { icon: FolderOpen, label: "My Case Summary", href: "/client/case-summary" },
+  { icon: Calendar, label: "Appointments", href: "/client/appointments" },
 ];
 
 const lawyerItems: SidebarItem[] = [
   { icon: Home, label: "Dashboard", href: "/lawyer-dashboard" },
-  { icon: Users, label: "Client Requests", href: "/lawyer-dashboard#requests" },
-  { icon: FileText, label: "Recommended Cases", href: "/lawyer-dashboard#cases" },
-  { icon: Star, label: "Profile Settings", href: "/lawyer-dashboard#profile" },
+  { icon: Users, label: "Client Requests", href: "/lawyer/client-requests" },
+  { icon: FileText, label: "Recommended Cases", href: "/lawyer/recommended-cases" },
+  { icon: Star, label: "Profile Settings", href: "/lawyer/profile-settings" },
 ];
 
 const DashboardSidebar = ({ userType }: DashboardSidebarProps) => {

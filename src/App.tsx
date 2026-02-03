@@ -13,6 +13,14 @@ import ChatAI from "./pages/ChatAI";
 import BookAppointment from "./pages/BookAppointment";
 import AdminPanel from "./pages/AdminPanel";
 import NotFound from "./pages/NotFound";
+// Client pages
+import RecommendedLawyers from "./pages/client/RecommendedLawyers";
+import CaseSummary from "./pages/client/CaseSummary";
+import Appointments from "./pages/client/Appointments";
+// Lawyer pages
+import ClientRequests from "./pages/lawyer/ClientRequests";
+import RecommendedCases from "./pages/lawyer/RecommendedCases";
+import ProfileSettings from "./pages/lawyer/ProfileSettings";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +40,14 @@ const App = () => (
           <Route path="/chat-ai" element={<ChatAI />} />
           <Route path="/book-appointment/:lawyerId" element={<BookAppointment />} />
           <Route path="/admin" element={<AdminPanel />} />
+          {/* Client routes */}
+          <Route path="/client/recommended-lawyers" element={<RecommendedLawyers />} />
+          <Route path="/client/case-summary" element={<CaseSummary />} />
+          <Route path="/client/appointments" element={<Appointments />} />
+          {/* Lawyer routes */}
+          <Route path="/lawyer/client-requests" element={<ClientRequests />} />
+          <Route path="/lawyer/recommended-cases" element={<RecommendedCases />} />
+          <Route path="/lawyer/profile-settings" element={<ProfileSettings />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
