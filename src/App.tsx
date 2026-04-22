@@ -7,6 +7,8 @@ import { AuthProvider } from "@/hooks/AuthProvider";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import ClientDashboard from "./pages/ClientDashboard";
 import LawyerDashboard from "./pages/LawyerDashboard";
 import CaseDetails from "./pages/CaseDetails";
@@ -34,6 +36,8 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/client-dashboard" element={<ProtectedRoute requireRole="client"><ClientDashboard /></ProtectedRoute>} />
             <Route path="/lawyer-dashboard" element={<ProtectedRoute requireRole="lawyer"><LawyerDashboard /></ProtectedRoute>} />
             <Route path="/case/:id" element={<ProtectedRoute><CaseDetails /></ProtectedRoute>} />
