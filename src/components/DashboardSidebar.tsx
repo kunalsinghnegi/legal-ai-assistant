@@ -1,7 +1,9 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Scale, Home, MessageSquare, Users, FolderOpen, Calendar, LogOut, FileText, Star } from "lucide-react";
 import { Button } from "./ui/button";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 interface SidebarItem {
   icon: React.ElementType;
@@ -30,7 +32,15 @@ const lawyerItems: SidebarItem[] = [
 
 const DashboardSidebar = ({ userType }: DashboardSidebarProps) => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const items = userType === "client" ? clientItems : lawyerItems;
+
+  const handleLogout = async () => {
+    await signOut();
+    toast.success("Signed out");
+    navigate("/auth", { replace: true });
+  };
 
   return (
     <aside className="w-64 min-h-screen bg-card border-r border-border p-6">
@@ -63,7 +73,7 @@ const DashboardSidebar = ({ userType }: DashboardSidebarProps) => {
       </nav>
 
       <div className="absolute bottom-6 left-6 right-6">
-        <Button variant="ghost" className="w-full justify-start gap-3 text-destructive hover:text-destructive hover:bg-destructive/10">
+        <Button onClick={handleLogout} variant="ghost" className="w-full justify-start gap-3 text-destructive hover:text-destructive hover:bg-destructive/10">
           <LogOut className="h-5 w-5" />
           <span>Logout</span>
         </Button>
