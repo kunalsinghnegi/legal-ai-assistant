@@ -16,23 +16,41 @@ export type Database = {
     Tables: {
       profiles: {
         Row: {
+          address: string | null
+          bar_id: string | null
+          case_category: string | null
           created_at: string
+          experience_years: number | null
           full_name: string
           id: string
+          phone: string | null
+          specialization: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          address?: string | null
+          bar_id?: string | null
+          case_category?: string | null
           created_at?: string
+          experience_years?: number | null
           full_name: string
           id?: string
+          phone?: string | null
+          specialization?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          address?: string | null
+          bar_id?: string | null
+          case_category?: string | null
           created_at?: string
+          experience_years?: number | null
           full_name?: string
           id?: string
+          phone?: string | null
+          specialization?: string | null
           updated_at?: string
           user_id?: string
         }
