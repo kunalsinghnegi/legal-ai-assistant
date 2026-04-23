@@ -1,130 +1,151 @@
+import { useEffect, useState } from "react";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileText, MapPin, Clock, TrendingUp } from "lucide-react";
+import { FileText, Clock, TrendingUp, Loader2, AlertCircle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
+
+type RecCase = {
+  id: string;
+  client_id: string;
+  title: string;
+  description: string;
+  category: string;
+  urgency: "low" | "medium" | "high";
+  status: string;
+  created_at: string;
+  matchScore: number;
+};
+
+// Compute match score based on category overlap with lawyer specialization
+const scoreCase = (caseCategory: string, specialization: string): number => {
+  const cat = caseCategory.toLowerCase();
+  const specs = specialization.toLowerCase().split(/[,;|]/).map((s) => s.trim()).filter(Boolean);
+  if (specs.some((s) => cat.includes(s) || s.includes(cat))) return 95;
+  if (specs.some((s) => s.split(" ").some((w) => w.length > 3 && cat.includes(w)))) return 80;
+  return 60;
+};
 
 const RecommendedCases = () => {
-  const recommendedCases = [
-    {
-      id: 1,
-      title: "Property Inheritance Dispute",
-      caseType: "Property Law",
-      location: "Mumbai, Maharashtra",
-      budget: "₹50,000 - ₹1,00,000",
-      matchScore: 98,
-      postedAgo: "2 hours ago",
-      description: "Dispute between siblings over inherited ancestral property. Need experienced property lawyer for mediation and court proceedings.",
-      skills: ["Property Law", "Inheritance", "Mediation"]
-    },
-    {
-      id: 2,
-      title: "Corporate Fraud Investigation",
-      caseType: "Criminal Law",
-      location: "Delhi NCR",
-      budget: "₹2,00,000+",
-      matchScore: 95,
-      postedAgo: "5 hours ago",
-      description: "Large-scale corporate fraud case requiring criminal defense expertise. Multiple accused involved.",
-      skills: ["Criminal Defense", "White Collar Crime", "Corporate Law"]
-    },
-    {
-      id: 3,
-      title: "Land Acquisition Compensation",
-      caseType: "Property Law",
-      location: "Pune, Maharashtra",
-      budget: "₹75,000 - ₹1,50,000",
-      matchScore: 92,
-      postedAgo: "1 day ago",
-      description: "Government land acquisition case. Client seeking fair compensation and challenging undervaluation.",
-      skills: ["Property Law", "Land Acquisition", "Government Cases"]
-    },
-    {
-      id: 4,
-      title: "Cheque Bounce Case",
-      caseType: "Criminal Law",
-      location: "Bangalore, Karnataka",
-      budget: "₹25,000 - ₹50,000",
-      matchScore: 88,
-      postedAgo: "2 days ago",
-      description: "NI Act Section 138 case. Multiple cheques bounced, total amount ₹15 lakhs.",
-      skills: ["Criminal Law", "NI Act", "Banking Law"]
-    },
-    {
-      id: 5,
-      title: "Partnership Dissolution",
-      caseType: "Civil Law",
-      location: "Chennai, Tamil Nadu",
-      budget: "₹1,00,000 - ₹2,00,000",
-      matchScore: 85,
-      postedAgo: "3 days ago",
-      description: "Partnership firm dissolution with asset division dispute. Three partners involved.",
-      skills: ["Civil Law", "Partnership Law", "Commercial Disputes"]
-    },
-  ];
+  const { user } = useAuth();
+  const [cases, setCases] = useState<RecCase[]>([]);
+  const [specialization, setSpecialization] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [interestedId, setInterestedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      setLoading(true);
+      const [{ data: lawyer }, { data: openCases }] = await Promise.all([
+        supabase.from("lawyers").select("specialization").eq("user_id", user.id).maybeSingle(),
+        supabase.from("cases").select("*").eq("status", "open").order("created_at", { ascending: false }).limit(50),
+      ]);
+
+      const spec = lawyer?.specialization ?? "";
+      setSpecialization(spec);
+
+      const scored = (openCases ?? [])
+        .map((c) => ({ ...c, matchScore: scoreCase(c.category, spec) } as RecCase))
+        .sort((a, b) => b.matchScore - a.matchScore);
+
+      setCases(scored);
+      setLoading(false);
+    })();
+  }, [user]);
+
+  const expressInterest = async (c: RecCase) => {
+    if (!user) return;
+    setInterestedId(c.id);
+    const { error } = await supabase.from("client_requests").insert({
+      client_id: c.client_id,
+      lawyer_id: user.id,
+      case_id: c.id,
+      message: `I'm interested in helping with your case "${c.title}". My specialization aligns with this matter.`,
+      status: "pending",
+    });
+    setInterestedId(null);
+    if (error) {
+      toast.error(error.message.includes("policy") ? "Only clients can initiate; reach out via platform messaging." : "Failed to send interest");
+      return;
+    }
+    toast.success("Interest sent to client");
+  };
 
   return (
     <div className="flex min-h-screen bg-background">
       <DashboardSidebar userType="lawyer" />
-      
       <main className="flex-1 p-8 animate-fade-in">
         <div className="max-w-5xl mx-auto space-y-8">
           <div>
             <h1 className="text-3xl font-bold mb-2">📁 Recommended Cases</h1>
-            <p className="text-muted-foreground">Cases matching your expertise and experience</p>
+            <p className="text-muted-foreground">
+              Open cases matched to your specialization{specialization && <>: <span className="font-medium text-foreground">{specialization}</span></>}
+            </p>
           </div>
 
-          <div className="grid gap-6">
-            {recommendedCases.map((caseItem) => (
-              <Card key={caseItem.id} className="hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-3 mb-2">
-                        <CardTitle className="text-xl">{caseItem.title}</CardTitle>
-                        <Badge variant="secondary" className="flex items-center gap-1">
-                          <TrendingUp className="h-3 w-3" />
-                          {caseItem.matchScore}% Match
-                        </Badge>
+          {!specialization && !loading && (
+            <Card className="border-yellow-500/30 bg-yellow-500/5">
+              <CardContent className="p-4 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium">Set your specialization</p>
+                  <p className="text-muted-foreground">Update your profile settings to get better case matches.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {loading ? (
+            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : cases.length === 0 ? (
+            <Card><CardContent className="p-8 text-center text-muted-foreground">No open cases right now.</CardContent></Card>
+          ) : (
+            <div className="grid gap-6">
+              {cases.map((c) => (
+                <Card key={c.id} className="hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <CardTitle className="text-xl">{c.title}</CardTitle>
+                          <Badge variant="secondary" className="flex items-center gap-1">
+                            <TrendingUp className="h-3 w-3" />
+                            {c.matchScore}% Match
+                          </Badge>
+                          <Badge variant={c.urgency === "high" ? "destructive" : c.urgency === "medium" ? "default" : "outline"} className="capitalize">
+                            {c.urgency} urgency
+                          </Badge>
+                        </div>
+                        <CardDescription className="flex items-center gap-4 flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <FileText className="h-4 w-4" />
+                            {c.category}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-4 w-4" />
+                            {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
+                          </span>
+                        </CardDescription>
                       </div>
-                      <CardDescription className="flex items-center gap-4">
-                        <span className="flex items-center gap-1">
-                          <FileText className="h-4 w-4" />
-                          {caseItem.caseType}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-4 w-4" />
-                          {caseItem.location}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-4 w-4" />
-                          {caseItem.postedAgo}
-                        </span>
-                      </CardDescription>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-primary">{caseItem.budget}</p>
-                      <p className="text-xs text-muted-foreground">Estimated Budget</p>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground mb-4 line-clamp-3">{c.description}</p>
+                    <div className="flex justify-end">
+                      <Button onClick={() => expressInterest(c)} disabled={interestedId === c.id}>
+                        {interestedId === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Express Interest"}
+                      </Button>
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">{caseItem.description}</p>
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-2">
-                      {caseItem.skills.map((skill) => (
-                        <Badge key={skill} variant="outline">{skill}</Badge>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="outline">View Details</Button>
-                      <Button>Express Interest</Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>
