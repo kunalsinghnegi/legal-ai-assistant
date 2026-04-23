@@ -14,6 +14,205 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointments: {
+        Row: {
+          case_id: string | null
+          client_id: string
+          created_at: string
+          duration_minutes: number
+          id: string
+          lawyer_id: string
+          mode: Database["public"]["Enums"]["appointment_mode"]
+          notes: string | null
+          scheduled_at: string
+          status: Database["public"]["Enums"]["appointment_status"]
+          updated_at: string
+        }
+        Insert: {
+          case_id?: string | null
+          client_id: string
+          created_at?: string
+          duration_minutes?: number
+          id?: string
+          lawyer_id: string
+          mode?: Database["public"]["Enums"]["appointment_mode"]
+          notes?: string | null
+          scheduled_at: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string | null
+          client_id?: string
+          created_at?: string
+          duration_minutes?: number
+          id?: string
+          lawyer_id?: string
+          mode?: Database["public"]["Enums"]["appointment_mode"]
+          notes?: string | null
+          scheduled_at?: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cases: {
+        Row: {
+          category: string
+          client_id: string
+          created_at: string
+          description: string
+          id: string
+          status: Database["public"]["Enums"]["case_status"]
+          title: string
+          updated_at: string
+          urgency: Database["public"]["Enums"]["case_urgency"]
+        }
+        Insert: {
+          category: string
+          client_id: string
+          created_at?: string
+          description: string
+          id?: string
+          status?: Database["public"]["Enums"]["case_status"]
+          title: string
+          updated_at?: string
+          urgency?: Database["public"]["Enums"]["case_urgency"]
+        }
+        Update: {
+          category?: string
+          client_id?: string
+          created_at?: string
+          description?: string
+          id?: string
+          status?: Database["public"]["Enums"]["case_status"]
+          title?: string
+          updated_at?: string
+          urgency?: Database["public"]["Enums"]["case_urgency"]
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["chat_role"]
+          user_id: string
+        }
+        Insert: {
+          content: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["chat_role"]
+          user_id: string
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["chat_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      client_requests: {
+        Row: {
+          case_id: string | null
+          client_id: string
+          created_at: string
+          id: string
+          lawyer_id: string
+          message: string | null
+          status: Database["public"]["Enums"]["request_status"]
+          updated_at: string
+        }
+        Insert: {
+          case_id?: string | null
+          client_id: string
+          created_at?: string
+          id?: string
+          lawyer_id: string
+          message?: string | null
+          status?: Database["public"]["Enums"]["request_status"]
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string | null
+          client_id?: string
+          created_at?: string
+          id?: string
+          lawyer_id?: string
+          message?: string | null
+          status?: Database["public"]["Enums"]["request_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_requests_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lawyers: {
+        Row: {
+          average_rating: number
+          bar_id: string
+          bio: string | null
+          created_at: string
+          experience_years: number
+          hourly_rate: number | null
+          id: string
+          specialization: string
+          total_reviews: number
+          updated_at: string
+          user_id: string
+          verified: boolean
+        }
+        Insert: {
+          average_rating?: number
+          bar_id: string
+          bio?: string | null
+          created_at?: string
+          experience_years?: number
+          hourly_rate?: number | null
+          id?: string
+          specialization: string
+          total_reviews?: number
+          updated_at?: string
+          user_id: string
+          verified?: boolean
+        }
+        Update: {
+          average_rating?: number
+          bar_id?: string
+          bio?: string | null
+          created_at?: string
+          experience_years?: number
+          hourly_rate?: number | null
+          id?: string
+          specialization?: string
+          total_reviews?: number
+          updated_at?: string
+          user_id?: string
+          verified?: boolean
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           address: string | null
@@ -56,6 +255,47 @@ export type Database = {
         }
         Relationships: []
       }
+      reviews: {
+        Row: {
+          appointment_id: string | null
+          client_id: string
+          comment: string | null
+          created_at: string
+          id: string
+          lawyer_id: string
+          rating: number
+          updated_at: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          client_id: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          lawyer_id: string
+          rating: number
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          client_id?: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          lawyer_id?: string
+          rating?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -92,6 +332,12 @@ export type Database = {
     }
     Enums: {
       app_role: "client" | "lawyer" | "admin"
+      appointment_mode: "online" | "in_person"
+      appointment_status: "pending" | "confirmed" | "completed" | "cancelled"
+      case_status: "open" | "in_progress" | "closed" | "cancelled"
+      case_urgency: "low" | "medium" | "high"
+      chat_role: "user" | "assistant" | "system"
+      request_status: "pending" | "accepted" | "declined"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -220,6 +466,12 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["client", "lawyer", "admin"],
+      appointment_mode: ["online", "in_person"],
+      appointment_status: ["pending", "confirmed", "completed", "cancelled"],
+      case_status: ["open", "in_progress", "closed", "cancelled"],
+      case_urgency: ["low", "medium", "high"],
+      chat_role: ["user", "assistant", "system"],
+      request_status: ["pending", "accepted", "declined"],
     },
   },
 } as const
