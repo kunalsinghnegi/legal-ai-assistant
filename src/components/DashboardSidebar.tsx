@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Scale, Home, MessageSquare, Users, FolderOpen, Calendar, LogOut, FileText, Star } from "lucide-react";
+import { Scale, Home, MessageSquare, Users, FolderOpen, Calendar, LogOut, FileText, Star, MessageCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ interface DashboardSidebarProps {
 const clientItems: SidebarItem[] = [
   { icon: Home, label: "Dashboard", href: "/client-dashboard" },
   { icon: MessageSquare, label: "Chat with AI", href: "/chat-ai" },
+  { icon: MessageCircle, label: "My Chats", href: "/client/chat" },
   { icon: Users, label: "Recommended Lawyers", href: "/client/recommended-lawyers" },
   { icon: FolderOpen, label: "My Case Summary", href: "/client/case-summary" },
   { icon: Calendar, label: "Appointments", href: "/client/appointments" },
@@ -26,7 +27,9 @@ const clientItems: SidebarItem[] = [
 const lawyerItems: SidebarItem[] = [
   { icon: Home, label: "Dashboard", href: "/lawyer-dashboard" },
   { icon: Users, label: "Client Requests", href: "/lawyer/client-requests" },
+  { icon: FolderOpen, label: "My Accepted Cases", href: "/lawyer/accepted-cases" },
   { icon: FileText, label: "Recommended Cases", href: "/lawyer/recommended-cases" },
+  { icon: MessageCircle, label: "My Chats", href: "/lawyer/chat" },
   { icon: Star, label: "Profile Settings", href: "/lawyer/profile-settings" },
 ];
 
@@ -43,13 +46,13 @@ const DashboardSidebar = ({ userType }: DashboardSidebarProps) => {
   };
 
   return (
-    <aside className="w-64 min-h-screen bg-card border-r border-border p-6">
+    <aside className="w-64 min-h-screen bg-card border-r border-border p-6 flex flex-col">
       <Link to="/" className="flex items-center gap-2 mb-8">
         <Scale className="h-8 w-8 text-primary" />
         <span className="text-xl font-bold">LegalAI</span>
       </Link>
 
-      <nav className="space-y-2">
+      <nav className="space-y-2 flex-1">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.href || 
@@ -72,7 +75,7 @@ const DashboardSidebar = ({ userType }: DashboardSidebarProps) => {
         })}
       </nav>
 
-      <div className="absolute bottom-6 left-6 right-6">
+      <div className="mt-auto pt-6">
         <Button onClick={handleLogout} variant="ghost" className="w-full justify-start gap-3 text-destructive hover:text-destructive hover:bg-destructive/10">
           <LogOut className="h-5 w-5" />
           <span>Logout</span>

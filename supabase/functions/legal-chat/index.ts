@@ -5,7 +5,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SYSTEM_PROMPT = `You are NyayaSetu AI, a knowledgeable legal assistant specialized in the **Indian legal framework**.
+const SYSTEM_PROMPT = `You are LegalAI AI, a knowledgeable legal assistant specialized in the **Indian legal framework**.
 
 Your scope:
 - Indian Constitution, IPC / Bharatiya Nyaya Sanhita (BNS), CrPC / BNSS, CPC, Indian Evidence Act / BSA

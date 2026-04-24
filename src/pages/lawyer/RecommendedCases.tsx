@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { useQuery, useMutation } from "@tanstack/react-query";
 
 type RecCase = {
   id: string;
@@ -32,49 +32,47 @@ const scoreCase = (caseCategory: string, specialization: string): number => {
 
 const RecommendedCases = () => {
   const { user } = useAuth();
-  const [cases, setCases] = useState<RecCase[]>([]);
-  const [specialization, setSpecialization] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [interestedId, setInterestedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      setLoading(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ["recommended_cases", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return { cases: [], specialization: "" };
       const [{ data: lawyer }, { data: openCases }] = await Promise.all([
         supabase.from("lawyers").select("specialization").eq("user_id", user.id).maybeSingle(),
         supabase.from("cases").select("*").eq("status", "open").order("created_at", { ascending: false }).limit(50),
       ]);
 
       const spec = lawyer?.specialization ?? "";
-      setSpecialization(spec);
-
       const scored = (openCases ?? [])
-        .map((c) => ({ ...c, matchScore: scoreCase(c.category, spec) } as RecCase))
+        .map((c: any) => ({ ...c, matchScore: scoreCase(c.category, spec) } as RecCase))
         .sort((a, b) => b.matchScore - a.matchScore);
 
-      setCases(scored);
-      setLoading(false);
-    })();
-  }, [user]);
+      return { cases: scored, specialization: spec };
+    },
+    enabled: !!user?.id,
+  });
 
-  const expressInterest = async (c: RecCase) => {
-    if (!user) return;
-    setInterestedId(c.id);
-    const { error } = await supabase.from("client_requests").insert({
-      client_id: c.client_id,
-      lawyer_id: user.id,
-      case_id: c.id,
-      message: `I'm interested in helping with your case "${c.title}". My specialization aligns with this matter.`,
-      status: "pending",
-    });
-    setInterestedId(null);
-    if (error) {
+  const expressInterestMutation = useMutation({
+    mutationFn: async (c: RecCase) => {
+      if (!user) throw new Error("Not logged in");
+      const { error } = await supabase.from("client_requests").insert({
+        client_id: c.client_id,
+        lawyer_id: user.id,
+        case_id: c.id,
+        message: `I'm interested in helping with your case "${c.title}". My specialization aligns with this matter.`,
+        status: "pending",
+      });
+      if (error) throw error;
+      return true;
+    },
+    onSuccess: () => toast.success("Interest sent to client"),
+    onError: (error: Error) => {
       toast.error(error.message.includes("policy") ? "Only clients can initiate; reach out via platform messaging." : "Failed to send interest");
-      return;
     }
-    toast.success("Interest sent to client");
-  };
+  });
+
+  const cases = data?.cases ?? [];
+  const specialization = data?.specialization ?? "";
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -88,7 +86,7 @@ const RecommendedCases = () => {
             </p>
           </div>
 
-          {!specialization && !loading && (
+          {!specialization && !isLoading && (
             <Card className="border-yellow-500/30 bg-yellow-500/5">
               <CardContent className="p-4 flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
@@ -100,7 +98,7 @@ const RecommendedCases = () => {
             </Card>
           )}
 
-          {loading ? (
+          {isLoading ? (
             <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : cases.length === 0 ? (
             <Card><CardContent className="p-8 text-center text-muted-foreground">No open cases right now.</CardContent></Card>
@@ -137,8 +135,8 @@ const RecommendedCases = () => {
                   <CardContent>
                     <p className="text-sm text-muted-foreground mb-4 line-clamp-3">{c.description}</p>
                     <div className="flex justify-end">
-                      <Button onClick={() => expressInterest(c)} disabled={interestedId === c.id}>
-                        {interestedId === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Express Interest"}
+                      <Button onClick={() => expressInterestMutation.mutate(c)} disabled={expressInterestMutation.isPending && expressInterestMutation.variables?.id === c.id}>
+                        {expressInterestMutation.isPending && expressInterestMutation.variables?.id === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Express Interest"}
                       </Button>
                     </div>
                   </CardContent>

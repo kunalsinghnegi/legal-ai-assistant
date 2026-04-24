@@ -13,17 +13,14 @@ const Navbar = () => {
           </Link>
           
           <div className="hidden md:flex items-center gap-8">
-            <a href="#" className="text-foreground hover:text-primary transition-colors">
+            <a href="/" className="text-foreground hover:text-primary transition-colors">
               Home
             </a>
-            <a href="#features" className="text-foreground hover:text-primary transition-colors">
+            <a href="/auth" className="text-foreground hover:text-primary transition-colors">
               Find Lawyer
             </a>
-            <a href="#about" className="text-foreground hover:text-primary transition-colors">
-              About
-            </a>
-            <a href="#contact" className="text-foreground hover:text-primary transition-colors">
-              Contact
+            <a href="/chat-ai" className="text-foreground hover:text-primary transition-colors">
+              AI Assistant
             </a>
           </div>
           

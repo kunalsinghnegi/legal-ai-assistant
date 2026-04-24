@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,7 +8,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Scale, User } from "lucide-react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -39,6 +38,9 @@ const loginSchema = z.object(baseSchema);
 
 const Auth = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialRole = (searchParams.get("role") as Role) || "client";
+  
   const { user, role, loading } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -122,10 +124,18 @@ const Auth = () => {
   const handleGoogle = async () => {
     setSubmitting(true);
     try {
-      const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
+        },
       });
-      if (result.error) throw new Error(result.error.message ?? "Google sign-in failed");
+      if (error) throw error;
+      // Browser will redirect to Google — no further action needed here
     } catch (e: any) {
       toast.error(e.message ?? "Google sign-in failed");
       setSubmitting(false);
@@ -222,7 +232,7 @@ const Auth = () => {
           <CardDescription className="text-center">Choose your account type to continue</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="client" className="w-full" onValueChange={reset}>
+          <Tabs defaultValue={initialRole} className="w-full" onValueChange={reset}>
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="client" className="gap-2"><User className="h-4 w-4" />Client</TabsTrigger>
               <TabsTrigger value="lawyer" className="gap-2"><Scale className="h-4 w-4" />Lawyer</TabsTrigger>

@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Clock, FileText, Loader2 } from "lucide-react";
+import { Clock, FileText, Loader2, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type RequestRow = {
   id: string;
@@ -24,61 +26,59 @@ type RequestRow = {
 
 const ClientRequests = () => {
   const { user } = useAuth();
-  const [requests, setRequests] = useState<RequestRow[]>([]);
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<"all" | "pending" | "accepted" | "declined">("all");
-  const [loading, setLoading] = useState(true);
-  const [actingId, setActingId] = useState<string | null>(null);
 
-  const load = async () => {
-    if (!user) return;
-    setLoading(true);
-    const { data: reqs, error } = await supabase
-      .from("client_requests")
-      .select("*")
-      .eq("lawyer_id", user.id)
-      .order("created_at", { ascending: false });
+  const { data: requests = [], isLoading } = useQuery({
+    queryKey: ["client_requests", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data: reqs, error } = await supabase
+        .from("client_requests")
+        .select("*")
+        .eq("lawyer_id", user.id)
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      toast.error("Failed to load requests");
-      setLoading(false);
-      return;
+      if (error) throw error;
+      if (!reqs || reqs.length === 0) return [];
+
+      const clientIds = Array.from(new Set(reqs.map(r => r.client_id)));
+      const caseIds = Array.from(new Set(reqs.map(r => r.case_id).filter(Boolean))) as string[];
+
+      const [profilesRes, casesRes] = await Promise.all([
+        supabase.from("profiles").select("user_id, full_name").in("user_id", clientIds),
+        caseIds.length > 0 
+          ? supabase.from("cases").select("id, title, category").in("id", caseIds)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      const profiles = profilesRes.data || [];
+      const casesData = casesRes.data || [];
+
+      return reqs.map((r: any) => ({
+        ...r,
+        client_name: profiles.find(p => p.user_id === r.client_id)?.full_name ?? "Client",
+        case_title: casesData.find(c => c.id === r.case_id)?.title,
+        case_category: casesData.find(c => c.id === r.case_id)?.category,
+      })) as RequestRow[];
+    },
+    enabled: !!user?.id,
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: "accepted" | "declined" }) => {
+      const { error } = await supabase.from("client_requests").update({ status }).eq("id", id);
+      if (error) throw error;
+      return { id, status };
+    },
+    onSuccess: (data) => {
+      toast.success(`Request ${data.status}`);
+      queryClient.invalidateQueries({ queryKey: ["client_requests", user?.id] });
+    },
+    onError: () => {
+      toast.error("Failed to update status");
     }
-
-    const enriched = await Promise.all(
-      (reqs ?? []).map(async (r) => {
-        const [{ data: profile }, { data: caseRow }] = await Promise.all([
-          supabase.from("profiles").select("full_name").eq("user_id", r.client_id).maybeSingle(),
-          r.case_id
-            ? supabase.from("cases").select("title, category").eq("id", r.case_id).maybeSingle()
-            : Promise.resolve({ data: null }),
-        ]);
-        return {
-          ...r,
-          client_name: profile?.full_name ?? "Client",
-          case_title: caseRow?.title,
-          case_category: caseRow?.category,
-        } as RequestRow;
-      })
-    );
-    setRequests(enriched);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    load();
-  }, [user]);
-
-  const updateStatus = async (id: string, status: "accepted" | "declined") => {
-    setActingId(id);
-    const { error } = await supabase.from("client_requests").update({ status }).eq("id", id);
-    setActingId(null);
-    if (error) {
-      toast.error("Failed to update");
-      return;
-    }
-    toast.success(`Request ${status}`);
-    setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
-  };
+  });
 
   const filtered = filter === "all" ? requests : requests.filter((r) => r.status === filter);
   const counts = {
@@ -111,7 +111,7 @@ const ClientRequests = () => {
             ))}
           </div>
 
-          {loading ? (
+          {isLoading ? (
             <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : filtered.length === 0 ? (
             <Card><CardContent className="p-8 text-center text-muted-foreground">No requests yet.</CardContent></Card>
@@ -150,17 +150,29 @@ const ClientRequests = () => {
                         </div>
                       </div>
                       {request.status === "pending" && (
-                        <div className="flex gap-2 shrink-0">
+                        <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+                          {request.case_id && (
+                            <Link to={`/case/${request.case_id}`}>
+                              <Button variant="secondary" size="sm" className="gap-2">
+                                <ExternalLink className="h-4 w-4" />
+                                View Case
+                              </Button>
+                            </Link>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={actingId === request.id}
-                            onClick={() => updateStatus(request.id, "declined")}
+                            disabled={updateStatusMutation.isPending && updateStatusMutation.variables?.id === request.id}
+                            onClick={() => updateStatusMutation.mutate({ id: request.id, status: "declined" })}
                           >
                             Decline
                           </Button>
-                          <Button size="sm" disabled={actingId === request.id} onClick={() => updateStatus(request.id, "accepted")}>
-                            {actingId === request.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Accept"}
+                          <Button 
+                            size="sm" 
+                            disabled={updateStatusMutation.isPending && updateStatusMutation.variables?.id === request.id} 
+                            onClick={() => updateStatusMutation.mutate({ id: request.id, status: "accepted" })}
+                          >
+                            {(updateStatusMutation.isPending && updateStatusMutation.variables?.id === request.id && updateStatusMutation.variables?.status === "accepted") ? <Loader2 className="h-4 w-4 animate-spin" /> : "Accept"}
                           </Button>
                         </div>
                       )}

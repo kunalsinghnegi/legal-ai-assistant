@@ -1,10 +1,68 @@
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Scale, ArrowLeft, Download, FileText, Calendar, MapPin } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Scale, ArrowLeft, FileText, Calendar, MapPin, Loader2, Star, Briefcase, ShieldCheck, ChevronRight } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import DocumentUpload from "@/components/DocumentUpload";
+import { useAuth } from "@/hooks/useAuth";
 
 const CaseDetails = () => {
+  const { id } = useParams<{ id: string }>();
+  const { role, user } = useAuth();
+
+  const { data: caseData, isLoading } = useQuery({
+    queryKey: ["case_details", id],
+    queryFn: async () => {
+      if (!id) return null;
+      const { data, error } = await supabase.from("cases").select("*").eq("id", id).single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  // Fetch lawyers who expressed interest in this case (only relevant for clients)
+  const { data: interestedLawyers = [], isLoading: isLawyersLoading } = useQuery({
+    queryKey: ["interested_lawyers", id],
+    queryFn: async () => {
+      if (!id) return [];
+      const { data: requests, error } = await supabase
+        .from("client_requests")
+        .select("lawyer_id, status, message, created_at")
+        .eq("case_id", id)
+        .neq("status", "declined");
+
+      if (error) throw error;
+      if (!requests || requests.length === 0) return [];
+
+      const enriched = await Promise.all(
+        requests.map(async (req: any) => {
+          const [{ data: profile }, { data: lawyerRow }] = await Promise.all([
+            supabase.from("profiles").select("full_name").eq("user_id", req.lawyer_id).maybeSingle(),
+            supabase.from("lawyers").select("specialization, experience_years, average_rating, verified, hourly_rate").eq("user_id", req.lawyer_id).maybeSingle(),
+          ]);
+          return {
+            lawyer_id: req.lawyer_id,
+            status: req.status,
+            message: req.message,
+            created_at: req.created_at,
+            full_name: profile?.full_name ?? "Advocate",
+            specialization: lawyerRow?.specialization ?? "",
+            experience_years: lawyerRow?.experience_years ?? 0,
+            average_rating: Number(lawyerRow?.average_rating ?? 0),
+            verified: lawyerRow?.verified ?? false,
+            hourly_rate: lawyerRow?.hourly_rate ?? null,
+          };
+        })
+      );
+      return enriched;
+    },
+    enabled: !!id && role === "client",
+  });
+
   const similarCases = [
     {
       id: 1,
@@ -20,14 +78,24 @@ const CaseDetails = () => {
       date: "January 8, 2024",
       summary: "Landmark case on property tax assessment and municipal jurisdiction."
     },
-    {
-      id: 3,
-      title: "Patel v. Patel Family Trust",
-      court: "Mumbai High Court",
-      date: "November 22, 2023",
-      summary: "Family property division and inheritance rights determination."
-    }
   ];
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!caseData) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+        <p className="text-muted-foreground">Case not found</p>
+        <Link to={role === "lawyer" ? "/lawyer-dashboard" : "/client-dashboard"}><Button variant="outline">Back to Dashboard</Button></Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -35,12 +103,10 @@ const CaseDetails = () => {
       <header className="border-b border-border bg-card">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <Link to="/client-dashboard" className="flex items-center gap-2">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Dashboard
-              </Button>
-            </Link>
+            <Button variant="ghost" size="sm" onClick={() => window.history.back()}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
             <Link to="/" className="flex items-center gap-2">
               <Scale className="h-6 w-6 text-primary" />
               <span className="font-bold text-lg">LegalAI</span>
@@ -56,10 +122,10 @@ const CaseDetails = () => {
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div>
-                  <CardTitle className="text-2xl mb-2">Property Dispute Case</CardTitle>
-                  <CardDescription className="text-base">Case ID: #PD-2025-001</CardDescription>
+                  <CardTitle className="text-2xl mb-2">{caseData.title}</CardTitle>
+                  <CardDescription className="text-base">Case ID: {caseData.id.split('-')[0].toUpperCase()}</CardDescription>
                 </div>
-                <Badge className="text-sm px-4 py-1">In Progress</Badge>
+                <Badge className="text-sm px-4 py-1 capitalize">{caseData.status.replace("_", " ")}</Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -68,61 +134,43 @@ const CaseDetails = () => {
                   <Calendar className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm text-muted-foreground">Filed On</p>
-                    <p className="font-medium">January 10, 2025</p>
+                    <p className="font-medium">{new Date(caseData.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Scale className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm text-muted-foreground">Category</p>
-                    <p className="font-medium">Property Law</p>
+                    <p className="font-medium">{caseData.category}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <MapPin className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p className="text-sm text-muted-foreground">Court</p>
-                    <p className="font-medium">District Court, Delhi</p>
+                    <p className="text-sm text-muted-foreground">Urgency</p>
+                    <p className="font-medium capitalize">{caseData.urgency}</p>
                   </div>
                 </div>
               </div>
 
               <div>
                 <h3 className="font-semibold mb-2">Case Summary</h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  This case involves a property ownership dispute between two parties regarding 
-                  ancestral land in South Delhi. The plaintiff claims rightful ownership based on 
-                  inheritance documents, while the defendant contests the validity of these documents. 
-                  The case is currently in the evidence submission phase.
+                <p className="text-muted-foreground leading-relaxed whitespace-pre-line">
+                  {caseData.description}
                 </p>
               </div>
 
               <div>
-                <h3 className="font-semibold mb-3">Uploaded Documents</h3>
-                <div className="grid md:grid-cols-2 gap-3">
-                  {["Property Deed", "Inheritance Certificate", "Survey Report"].map((doc, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-border">
-                      <div className="flex items-center gap-3">
-                        <FileText className="h-5 w-5 text-primary" />
-                        <span className="font-medium">{doc}.pdf</span>
-                      </div>
-                      <Button size="sm" variant="ghost">
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+                <h3 className="font-semibold mb-3">Case Documents</h3>
+                <DocumentUpload />
               </div>
 
               <div>
                 <h3 className="font-semibold mb-3">Case Timeline</h3>
                 <div className="space-y-3">
                   {[
-                    { date: "Jan 10, 2025", event: "Case Filed", status: "completed" },
-                    { date: "Jan 15, 2025", event: "Documents Submitted", status: "completed" },
-                    { date: "Jan 25, 2025", event: "First Hearing", status: "completed" },
-                    { date: "Feb 5, 2025", event: "Evidence Review", status: "current" },
-                    { date: "Feb 20, 2025", event: "Next Hearing", status: "upcoming" }
+                    { date: new Date(caseData.created_at).toLocaleDateString(), event: "Case Created", status: "completed" },
+                    { date: "Pending", event: "Lawyer Review", status: caseData.status === "open" ? "current" : "completed" },
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-4">
                       <div className={`w-3 h-3 rounded-full ${
@@ -135,7 +183,7 @@ const CaseDetails = () => {
                           <p className="font-medium">{item.event}</p>
                           <p className="text-sm text-muted-foreground">{item.date}</p>
                         </div>
-                        <Badge variant={item.status === "completed" ? "outline" : "default"}>
+                        <Badge variant={item.status === "completed" ? "outline" : "default"} className="capitalize">
                           {item.status}
                         </Badge>
                       </div>
@@ -145,6 +193,85 @@ const CaseDetails = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Interested Lawyers — Client Only */}
+          {role === "client" && (
+            <div>
+              <h2 className="text-2xl font-bold mb-4">⚖️ Lawyers Interested in Your Case</h2>
+              {isLawyersLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+              ) : interestedLawyers.length === 0 ? (
+                <Card className="border-dashed">
+                  <CardContent className="p-8 text-center text-muted-foreground">
+                    No lawyers have expressed interest yet. Sit tight — lawyers will reach out once they review your case.
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-6">
+                  {interestedLawyers.map((lawyer: any) => {
+                    const specs = lawyer.specialization
+                      ? lawyer.specialization.split(/[,;|]/).map((s: string) => s.trim()).filter(Boolean).slice(0, 3)
+                      : [];
+                    return (
+                      <Card key={lawyer.lawyer_id} className="hover:shadow-md transition-shadow hover:border-primary/40">
+                        <CardContent className="pt-6">
+                          <div className="flex items-start gap-4">
+                            <Avatar className="h-14 w-14">
+                              <AvatarFallback className="text-xl">
+                                {lawyer.full_name.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <h3 className="font-bold text-lg leading-tight">{lawyer.full_name}</h3>
+                                {lawyer.verified && (
+                                  <Badge variant="default" className="gap-1 text-xs">
+                                    <ShieldCheck className="h-3 w-3" />Verified
+                                  </Badge>
+                                )}
+                                <Badge variant={lawyer.status === "accepted" ? "default" : "secondary"} className="text-xs capitalize">
+                                  {lawyer.status}
+                                </Badge>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mb-3">
+                                <span className="flex items-center gap-1">
+                                  <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                                  {lawyer.average_rating.toFixed(1)}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Briefcase className="h-4 w-4" />
+                                  {lawyer.experience_years} yrs exp
+                                </span>
+                                {lawyer.hourly_rate && (
+                                  <span>₹{Number(lawyer.hourly_rate).toLocaleString("en-IN")}/hr</span>
+                                )}
+                              </div>
+                              {specs.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mb-3">
+                                  {specs.map((spec: string) => (
+                                    <Badge key={spec} variant="outline" className="text-xs">{spec}</Badge>
+                                  ))}
+                                </div>
+                              )}
+                              {lawyer.message && (
+                                <p className="text-sm text-muted-foreground italic line-clamp-2 mb-3">"{lawyer.message}"</p>
+                              )}
+                              <Link to={`/lawyer/${lawyer.lawyer_id}`}>
+                                <Button size="sm" className="gap-2 w-full">
+                                  View Full Profile & Book
+                                  <ChevronRight className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Similar Cases */}
           <div>

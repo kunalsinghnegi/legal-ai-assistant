@@ -11,11 +11,11 @@ import { Camera, Briefcase, Award, Loader2, ShieldCheck, ShieldAlert } from "luc
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 const ProfileSettings = () => {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
 
   // Profile fields
   const [fullName, setFullName] = useState("");
@@ -30,66 +30,75 @@ const ProfileSettings = () => {
   const [bio, setBio] = useState("");
   const [verified, setVerified] = useState(false);
 
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
+  const { data: profileData, isLoading } = useQuery({
+    queryKey: ["lawyer_profile_settings", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
       const [{ data: profile }, { data: lawyer }] = await Promise.all([
         supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("lawyers").select("*").eq("user_id", user.id).maybeSingle(),
       ]);
-      if (profile) {
-        setFullName(profile.full_name ?? "");
-        setPhone(profile.phone ?? "");
-        setAddress(profile.address ?? "");
-      }
-      if (lawyer) {
-        setBarId(lawyer.bar_id ?? "");
-        setSpecialization(lawyer.specialization ?? "");
-        setExperienceYears(String(lawyer.experience_years ?? ""));
-        setHourlyRate(lawyer.hourly_rate ? String(lawyer.hourly_rate) : "");
-        setBio(lawyer.bio ?? "");
-        setVerified(!!lawyer.verified);
-      }
-      setLoading(false);
-    })();
-  }, [user]);
+      return { profile, lawyer };
+    },
+    enabled: !!user?.id,
+  });
 
-  const handleSave = async () => {
-    if (!user) return;
-    setSaving(true);
-
-    const profileUpdate = supabase
-      .from("profiles")
-      .update({ full_name: fullName, phone, address, bar_id: barId, specialization, experience_years: experienceYears ? Number(experienceYears) : null })
-      .eq("user_id", user.id);
-
-    const lawyerUpsert = supabase.from("lawyers").upsert(
-      {
-        user_id: user.id,
-        bar_id: barId,
-        specialization,
-        experience_years: experienceYears ? Number(experienceYears) : 0,
-        hourly_rate: hourlyRate ? Number(hourlyRate) : null,
-        bio,
-      },
-      { onConflict: "user_id" }
-    );
-
-    const [p, l] = await Promise.all([profileUpdate, lawyerUpsert]);
-    setSaving(false);
-
-    if (p.error || l.error) {
-      toast.error(p.error?.message ?? l.error?.message ?? "Save failed");
-      return;
+  useEffect(() => {
+    if (profileData?.profile) {
+      setFullName(profileData.profile.full_name ?? "");
+      setPhone(profileData.profile.phone ?? "");
+      setAddress(profileData.profile.address ?? "");
     }
-    toast.success("Profile saved");
-  };
+    if (profileData?.lawyer) {
+      setBarId(profileData.lawyer.bar_id ?? "");
+      setSpecialization(profileData.lawyer.specialization ?? "");
+      setExperienceYears(String(profileData.lawyer.experience_years ?? ""));
+      setHourlyRate(profileData.lawyer.hourly_rate ? String(profileData.lawyer.hourly_rate) : "");
+      setBio(profileData.lawyer.bio ?? "");
+      setVerified(!!profileData.lawyer.verified);
+    }
+  }, [profileData]);
 
-  if (loading) {
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error("No user");
+      const profileUpdate = supabase
+        .from("profiles")
+        .update({ full_name: fullName, phone, address })
+        .eq("user_id", user.id);
+
+      const lawyerUpsert = supabase.from("lawyers").upsert(
+        {
+          user_id: user.id,
+          bar_id: barId,
+          specialization,
+          experience_years: experienceYears ? Number(experienceYears) : 0,
+          hourly_rate: hourlyRate ? Number(hourlyRate) : null,
+          bio,
+        },
+        { onConflict: "user_id" }
+      );
+
+      const [p, l] = await Promise.all([profileUpdate, lawyerUpsert]);
+      if (p.error) throw p.error;
+      if (l.error) throw l.error;
+      return true;
+    },
+    onSuccess: () => {
+      toast.success("Profile saved successfully");
+      queryClient.invalidateQueries({ queryKey: ["lawyer_profile_settings", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["lawyer_dashboard_profile", user?.id] });
+    },
+    onError: (error) => {
+      toast.error(error.message || "Save failed");
+    }
+  });
+
+  if (isLoading) {
     return (
       <div className="flex min-h-screen bg-background">
         <DashboardSidebar userType="lawyer" />
-        <main className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></main>
+        <main className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></main>
       </div>
     );
   }
@@ -149,8 +158,8 @@ const ProfileSettings = () => {
           </Card>
 
           <div className="flex justify-end gap-4">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Save Changes
             </Button>
           </div>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Jusgesto | AI Legal Assistant</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="logo">⚖ Jusgesto</div>
+  <ul>
+    <li><a href="/">Home</a></li>
+    <li><a href="/about">About</a></li>
+  </ul>
+</nav>
+
+<div class="container">
+
+  <aside class="lawyer-panel" id="lawyerPanel">
+    <h3>Recommended Lawyers</h3>
+  </aside>
+
+  <main class="chat-panel">
+    <h2>Ask from AI</h2>
+    <textarea id="userQuery" placeholder="Describe your legal problem..."></textarea>
+    <button onclick="askAI()">Ask AI</button>
+
+    <div class="ai-response" id="aiResponse"></div>
+  </main>
+
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>

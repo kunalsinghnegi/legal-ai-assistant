@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Scale, ArrowLeft, Star, MapPin, Briefcase, Calendar, MessageSquare, ShieldCheck, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
+import { useQuery } from "@tanstack/react-query";
 
 type LawyerData = {
   user_id: string;
@@ -32,22 +32,20 @@ type Review = {
 
 const LawyerProfile = () => {
   const { id } = useParams<{ id: string }>();
-  const [lawyer, setLawyer] = useState<LawyerData | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!id) return;
-    (async () => {
-      setLoading(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ["lawyer_profile", id],
+    queryFn: async () => {
+      if (!id) return null;
       const [{ data: lawyerRow }, { data: profile }, { data: reviewRows }] = await Promise.all([
         supabase.from("lawyers").select("*").eq("user_id", id).maybeSingle(),
         supabase.from("profiles").select("full_name, address").eq("user_id", id).maybeSingle(),
         supabase.from("reviews").select("*").eq("lawyer_id", id).order("created_at", { ascending: false }).limit(10),
       ]);
 
+      let lawyerData: LawyerData | null = null;
       if (lawyerRow && profile) {
-        setLawyer({
+        lawyerData = {
           user_id: lawyerRow.user_id,
           full_name: profile.full_name,
           bar_id: lawyerRow.bar_id,
@@ -59,11 +57,12 @@ const LawyerProfile = () => {
           average_rating: Number(lawyerRow.average_rating ?? 0),
           total_reviews: lawyerRow.total_reviews ?? 0,
           address: profile.address,
-        });
+        };
       }
 
+      let reviewsData: Review[] = [];
       if (reviewRows && reviewRows.length > 0) {
-        const enriched = await Promise.all(
+        reviewsData = await Promise.all(
           reviewRows.map(async (r) => {
             const { data: cp } = await supabase.from("profiles").select("full_name").eq("user_id", r.client_id).maybeSingle();
             return {
@@ -75,17 +74,18 @@ const LawyerProfile = () => {
             };
           })
         );
-        setReviews(enriched);
       }
-      setLoading(false);
-    })();
-  }, [id]);
 
-  if (loading) {
+      return { lawyer: lawyerData, reviews: reviewsData };
+    },
+    enabled: !!id,
+  });
+
+  if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
 
-  if (!lawyer) {
+  if (!data?.lawyer) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4">
         <p className="text-muted-foreground">Lawyer not found</p>
@@ -94,6 +94,7 @@ const LawyerProfile = () => {
     );
   }
 
+  const { lawyer, reviews } = data;
   const specs = lawyer.specialization.split(/[,;|]/).map((s) => s.trim()).filter(Boolean);
 
   return (

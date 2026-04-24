@@ -1,272 +1,399 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Scale, ArrowLeft, Send, Sparkles, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Scale,
+  ArrowLeft,
+  Search,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Briefcase,
+  MapPin,
+  Mail,
+  Tag,
+  FileText,
+  Users,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
-type Msg = { role: "user" | "assistant"; content: string };
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const GREETING: Msg = {
-  role: "assistant",
-  content: "👋 Hello! I'm **NyayaSetu AI**, your legal assistant for the Indian legal framework. Ask me about IPC/BNS sections, court procedures, your rights, or any legal topic.",
+interface SimilarCase {
+  case_number: string;
+  similarity: number;
+  tags: string;
+  solution_summary: string;
+}
+
+interface RecommendedLawyer {
+  name: string;
+  area: string;
+  city: string;
+  email: string;
+}
+
+interface RecommendResult {
+  message: string;
+  cases: SimilarCase[];
+  tags: string[];
+  lawyers: RecommendedLawyer[];
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+const CaseCard = ({ c, index }: { c: SimilarCase; index: number }) => {
+  const [open, setOpen] = useState(false);
+  const pct = Math.round(c.similarity * 100);
+
+  return (
+    <Card className="border border-border shadow-sm hover:shadow-md transition-shadow">
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle className="text-sm font-semibold text-foreground">
+            {index}. {c.case_number}
+          </CardTitle>
+          {/* Similarity badge */}
+          <span
+            className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${
+              pct >= 80
+                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                : pct >= 60
+                ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {pct}% match
+          </span>
+        </div>
+
+        {/* Tags inline */}
+        {c.tags && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {c.tags
+              .split(",")
+              .slice(0, 4)
+              .map((t, i) => (
+                <Badge key={i} variant="secondary" className="text-[10px] px-1.5 py-0">
+                  {t.trim()}
+                </Badge>
+              ))}
+          </div>
+        )}
+      </CardHeader>
+
+      <CardContent className="pt-0">
+        {/* Expandable summary */}
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+        >
+          {open ? (
+            <>
+              <ChevronUp className="h-3 w-3" /> Hide summary
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3 w-3" /> View solution summary
+            </>
+          )}
+        </button>
+
+        {open && (
+          <p className="mt-2 text-sm text-muted-foreground leading-relaxed border-t border-border pt-2">
+            {c.solution_summary}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 };
+
+const LawyerCard = ({ lawyer }: { lawyer: RecommendedLawyer }) => (
+  <Card className="border border-border hover:border-primary/40 hover:shadow-md transition-all group">
+    <CardContent className="p-4">
+      <div className="flex items-center gap-3">
+        {/* Avatar */}
+        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+          <span className="text-primary font-bold text-sm">
+            {lawyer.name.charAt(0)}
+          </span>
+        </div>
+
+        <div className="min-w-0">
+          <p className="font-semibold text-sm text-foreground truncate">
+            {lawyer.name}
+          </p>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Briefcase className="h-3 w-3" />
+              {lawyer.area}
+            </span>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <MapPin className="h-3 w-3" />
+              {lawyer.city}
+            </span>
+          </div>
+          <span className="flex items-center gap-1 text-xs text-primary/80 mt-0.5">
+            <Mail className="h-3 w-3" />
+            {lawyer.email}
+          </span>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 const ChatAI = () => {
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
-  const [messages, setMessages] = useState<Msg[]>([GREETING]);
-  const [input, setInput] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [conversationId] = useState(() => crypto.randomUUID());
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const suggestedPrompts = [
-    "⚖️ Explain bail procedure in India",
-    "📄 How do I file an FIR?",
-    "🏛️ Laws on property disputes",
-    "⚖️ My rights during arrest",
-    "📋 How to draft a legal notice?",
-  ];
+  const { user, role, loading: authLoading } = useAuth();
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<RecommendResult | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth", { replace: true });
   }, [user, authLoading, navigate]);
 
-  // Load chat history
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const { data } = await supabase
-        .from("chat_messages")
-        .select("role, content")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: true })
-        .limit(50);
-      if (data && data.length > 0) {
-        setMessages([GREETING, ...data.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))]);
-      }
-    })();
-  }, [user]);
+  const handleSearch = async () => {
+    const text = query.trim();
+    if (!text) {
+      toast.warning("Please describe your legal scenario first.");
+      return;
+    }
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
-
-  const persist = async (role: "user" | "assistant", content: string) => {
-    if (!user) return;
-    await supabase.from("chat_messages").insert({
-      user_id: user.id,
-      conversation_id: conversationId,
-      role,
-      content,
-    });
-  };
-
-  const handleSend = async (textOverride?: string) => {
-    const text = (textOverride ?? input).trim();
-    if (!text || isStreaming || !user) return;
-
-    const userMsg: Msg = { role: "user", content: text };
-    const history = messages.filter((m) => m !== GREETING);
-    setMessages((prev) => [...prev, userMsg]);
-    setInput("");
-    setIsStreaming(true);
-    persist("user", text);
-
-    let assistantText = "";
-    const upsert = (chunk: string) => {
-      assistantText += chunk;
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.role === "assistant" && last !== GREETING) {
-          return prev.map((m, i) => (i === prev.length - 1 ? { ...m, content: assistantText } : m));
-        }
-        return [...prev, { role: "assistant", content: assistantText }];
-      });
-    };
+    setLoading(true);
+    setResult(null);
 
     try {
-      const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/legal-chat`;
-      const { data: { session } } = await supabase.auth.getSession();
-
-      const resp = await fetch(CHAT_URL, {
+      const resp = await fetch("/api/recommend", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          messages: [...history, userMsg].map(({ role, content }) => ({ role, content })),
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: text }),
       });
 
       if (!resp.ok) {
-        if (resp.status === 429) toast.error("Rate limit hit. Try again in a moment.");
-        else if (resp.status === 402) toast.error("AI credits exhausted.");
-        else toast.error("AI request failed.");
-        setIsStreaming(false);
+        toast.error(
+          resp.status === 500
+            ? "ML backend error. Make sure the Python server is running."
+            : `Request failed (${resp.status})`
+        );
         return;
       }
-      if (!resp.body) throw new Error("No stream body");
 
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let done = false;
+      const data: RecommendResult = await resp.json();
+      setResult(data);
 
-      while (!done) {
-        const { done: d, value } = await reader.read();
-        if (d) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) !== -1) {
-          let line = buffer.slice(0, nl);
-          buffer = buffer.slice(nl + 1);
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (!line.startsWith("data: ")) continue;
-          const json = line.slice(6).trim();
-          if (json === "[DONE]") { done = true; break; }
-          try {
-            const parsed = JSON.parse(json);
-            const c = parsed.choices?.[0]?.delta?.content;
-            if (c) upsert(c);
-          } catch {
-            buffer = line + "\n" + buffer;
-            break;
-          }
-        }
-      }
-
-      if (assistantText) persist("assistant", assistantText);
-    } catch (e) {
-      console.error(e);
-      toast.error("Connection error. Please try again.");
+      // Scroll to results
+      setTimeout(
+        () => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+        100
+      );
+    } catch {
+      toast.error(
+        "Cannot connect to the ML backend. Run: uvicorn backend:app --reload inside the /send folder."
+      );
     } finally {
-      setIsStreaming(false);
+      setLoading(false);
     }
   };
 
+  const examplePrompts = [
+    "My landlord refuses to return my security deposit after I vacated the property.",
+    "My employer terminated me without notice and hasn't paid my last salary.",
+    "I was injured in a road accident caused by a reckless driver.",
+    "My business partner withdrew company funds without my consent.",
+    "A neighbour is encroaching on my property boundary.",
+  ];
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="border-b border-border bg-card">
+      {/* ── Header ── */}
+      <header className="border-b border-border bg-card sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link to="/client-dashboard">
+          <Link to={role === "lawyer" ? "/lawyer-dashboard" : "/client-dashboard"}>
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Dashboard
             </Button>
           </Link>
+
           <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            <span className="font-bold text-lg">AI Legal Assistant</span>
+            <Scale className="h-5 w-5 text-primary" />
+            <span className="font-bold text-lg">Case &amp; Lawyer Recommender</span>
           </div>
+
           <Link to="/" className="flex items-center gap-2">
             <Scale className="h-6 w-6 text-primary" />
           </Link>
         </div>
       </header>
 
-      <div className="flex-1 container mx-auto px-4 py-6 flex gap-6">
-        <div className="flex-1 flex flex-col">
-          <Card className="flex-1 p-6 mb-4 overflow-y-auto" ref={scrollRef as any}>
-            <div className="space-y-4">
-              {messages.map((message, i) => (
-                <div key={i} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}>
-                  {message.role === "assistant" && (
-                    <Avatar className="h-8 w-8 bg-primary shrink-0">
-                      <AvatarFallback className="bg-primary text-primary-foreground">
-                        <Scale className="h-4 w-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
-                    message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
-                  }`}>
-                    {message.role === "assistant" ? (
-                      <div className="prose prose-sm max-w-none dark:prose-invert text-sm leading-relaxed
-                        prose-headings:mt-2 prose-headings:mb-1 prose-p:my-1 prose-ul:my-1 prose-ol:my-1
-                        prose-strong:text-foreground prose-li:my-0">
-                        <ReactMarkdown>{message.content}</ReactMarkdown>
-                      </div>
-                    ) : (
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
-                    )}
-                  </div>
-                  {message.role === "user" && (
-                    <Avatar className="h-8 w-8 bg-secondary shrink-0">
-                      <AvatarFallback>U</AvatarFallback>
-                    </Avatar>
-                  )}
-                </div>
-              ))}
-              {isStreaming && messages[messages.length - 1]?.role === "user" && (
-                <div className="flex gap-3 justify-start">
-                  <Avatar className="h-8 w-8 bg-primary shrink-0">
-                    <AvatarFallback className="bg-primary text-primary-foreground">
-                      <Scale className="h-4 w-4" />
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="bg-muted rounded-2xl px-4 py-3 flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm text-muted-foreground">Thinking...</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
+      {/* ── Body ── */}
+      <main className="flex-1 container mx-auto px-4 py-8 max-w-6xl">
 
-          <div className="flex gap-2">
-            <Input
-              placeholder="Ask your legal question..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-              disabled={isStreaming}
-              className="flex-1"
-            />
-            <Button onClick={() => handleSend()} size="icon" className="h-10 w-10" disabled={isStreaming || !input.trim()}>
-              {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
-          </div>
+        {/* Hero / Input Section */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-foreground mb-2">
+            ⚖️ Legal Case &amp; Lawyer Recommendation
+          </h1>
+          <p className="text-muted-foreground max-w-xl mx-auto">
+            Describe your legal situation and our ML model will find the most
+            similar past cases and recommend the best-suited lawyers for you.
+          </p>
         </div>
 
-        <div className="w-80 space-y-4 hidden lg:block">
-          <h3 className="font-semibold text-lg mb-4">💡 Suggested Questions</h3>
-          <div className="space-y-2">
-            {suggestedPrompts.map((prompt, i) => (
+        {/* Input Card */}
+        <Card className="mb-6 shadow-sm">
+          <CardContent className="p-6">
+            <label className="block text-sm font-medium text-foreground mb-2">
+              📝 Describe your legal scenario
+            </label>
+            <Textarea
+              id="legalQuery"
+              rows={5}
+              placeholder="E.g. My landlord has not returned my security deposit even though I vacated the property three months ago and the apartment was in perfect condition..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="resize-none text-sm mb-4"
+              disabled={loading}
+            />
+
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
               <Button
-                key={i}
-                variant="outline"
-                className="w-full justify-start text-left h-auto py-3 px-4 hover-scale"
-                disabled={isStreaming}
-                onClick={() => handleSend(prompt.replace(/[⚖️📄🏛️📋]/g, "").trim())}
+                id="findCasesBtn"
+                onClick={handleSearch}
+                disabled={loading || !query.trim()}
+                className="gap-2"
               >
-                <span className="text-sm">{prompt}</span>
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                {loading ? "Analyzing…" : "Find Similar Cases & Lawyers"}
               </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setQuery(""); setResult(null); }}
+                disabled={loading}
+                className="text-muted-foreground"
+              >
+                Clear
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Example prompts */}
+        {!result && !loading && (
+          <div className="mb-8">
+            <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">
+              Try an example
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {examplePrompts.map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => setQuery(p)}
+                  className="text-xs bg-muted hover:bg-secondary text-foreground px-3 py-1.5 rounded-full border border-border transition-colors text-left"
+                >
+                  {p.length > 60 ? p.slice(0, 60) + "…" : p}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Loading skeleton */}
+        {loading && (
+          <div className="space-y-4 animate-pulse">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-24 bg-muted rounded-xl" />
             ))}
           </div>
+        )}
 
-          <Card className="p-4 bg-muted/50 mt-6">
-            <h4 className="font-semibold mb-2 flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              AI Tips
-            </h4>
-            <ul className="text-sm text-muted-foreground space-y-2">
-              <li>• Be specific with your questions</li>
-              <li>• Provide relevant case details</li>
-              <li>• Ask follow-up questions for clarity</li>
-              <li>• This is guidance, not legal advice</li>
-            </ul>
-          </Card>
-        </div>
-      </div>
+        {/* ── Results ── */}
+        {result && (
+          <div ref={resultRef} className="space-y-8">
+
+            {/* Tags */}
+            {result.tags.length > 0 && (
+              <section>
+                <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground mb-3">
+                  <Tag className="h-5 w-5 text-primary" />
+                  Extracted Legal Tags
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  {result.tags.map((tag, i) => (
+                    <Badge key={i} variant="outline" className="text-xs capitalize">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Similar Cases + Lawyers side-by-side on large screens */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+              {/* Similar Cases — takes 2/3 */}
+              <section className="lg:col-span-2">
+                <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground mb-3">
+                  <FileText className="h-5 w-5 text-primary" />
+                  Top Similar Legal Cases
+                  <span className="ml-auto text-xs font-normal text-muted-foreground">
+                    {result.cases.length} results
+                  </span>
+                </h2>
+
+                {result.cases.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No similar cases found.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {result.cases.map((c, i) => (
+                      <CaseCard key={i} c={c} index={i + 1} />
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Recommended Lawyers — takes 1/3 */}
+              <section>
+                <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground mb-3">
+                  <Users className="h-5 w-5 text-primary" />
+                  Recommended Lawyers
+                </h2>
+
+                {result.lawyers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No lawyers found.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {result.lawyers.map((l, i) => (
+                      <LawyerCard key={i} lawyer={l} />
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {/* Footer note */}
+            <p className="text-xs text-muted-foreground text-center pb-4">
+              ✅ Results powered by ML Case → Tags → Lawyer pipeline. This is for guidance only, not legal advice.
+            </p>
+          </div>
+        )}
+      </main>
     </div>
   );
 };

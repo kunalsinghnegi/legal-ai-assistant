@@ -3,14 +3,86 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Users, FileText, Star, CheckCircle, Clock, TrendingUp } from "lucide-react";
+import { Users, FileText, Star, CheckCircle, Clock, TrendingUp, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { Link } from "react-router-dom";
 
 const LawyerDashboard = () => {
-  const clientRequests = [
-    { id: 1, name: "Kunal Sharma", caseType: "Property Dispute", date: "2 hours ago", status: "new" },
-    { id: 2, name: "Priya Patel", caseType: "Divorce Case", date: "5 hours ago", status: "pending" },
-    { id: 3, name: "Amit Kumar", caseType: "Criminal Defense", date: "1 day ago", status: "reviewed" },
-  ];
+  const { user } = useAuth();
+
+  // Fetch Lawyer Profile & Stats
+  const { data: profileData, isLoading: isProfileLoading } = useQuery({
+    queryKey: ["lawyer_dashboard_profile", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const [{ data: profile }, { data: lawyer }] = await Promise.all([
+        supabase.from("profiles").select("*").eq("user_id", user.id).single(),
+        supabase.from("lawyers").select("*").eq("user_id", user.id).single()
+      ]);
+      return { profile, lawyer };
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch Client Requests
+  const { data: requests = [], isLoading: isRequestsLoading } = useQuery({
+    queryKey: ["lawyer_dashboard_requests", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data, error } = await supabase
+        .from("client_requests")
+        .select(`
+          id,
+          status,
+          created_at,
+          client_id,
+          cases ( category )
+        `)
+        .eq("lawyer_id", user.id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(5);
+        
+      if (error) throw error;
+      
+      // Fetch client profiles
+      const clientIds = data.map(r => r.client_id);
+      let profilesData: any[] = [];
+      if (clientIds.length > 0) {
+        const { data: profs } = await supabase.from("profiles").select("user_id, full_name").in("user_id", clientIds);
+        profilesData = profs || [];
+      }
+
+      return data.map((req: any) => ({
+        ...req,
+        clientName: profilesData.find(p => p.user_id === req.client_id)?.full_name || "Unknown Client",
+        caseCategory: req.cases?.category || "General Consultation"
+      }));
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch Appointments (to calculate active cases)
+  const { data: activeAppointments = [] } = useQuery({
+    queryKey: ["lawyer_dashboard_appointments", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("id")
+        .eq("lawyer_id", user.id)
+        .neq("status", "cancelled");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  const lawyerName = profileData?.profile?.full_name || "Advocate";
+  const rating = profileData?.lawyer?.average_rating || 0;
+  const casesWon = profileData?.lawyer?.total_reviews || 0; // Using reviews as proxy for now
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -20,7 +92,7 @@ const LawyerDashboard = () => {
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Header */}
           <div>
-            <h1 className="text-3xl font-bold mb-2">Welcome, Adv. Rajesh Kumar! ⚖️</h1>
+            <h1 className="text-3xl font-bold mb-2">Welcome, {lawyerName}! ⚖️</h1>
             <p className="text-muted-foreground">Manage your cases and client consultations</p>
           </div>
 
@@ -32,7 +104,7 @@ const LawyerDashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <p className="text-3xl font-bold">8</p>
+                  <p className="text-3xl font-bold">{requests.length}</p>
                   <Users className="h-8 w-8 text-primary" />
                 </div>
               </CardContent>
@@ -40,11 +112,11 @@ const LawyerDashboard = () => {
 
             <Card className="hover-scale">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Active Cases</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Active Consultations</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <p className="text-3xl font-bold">24</p>
+                  <p className="text-3xl font-bold">{activeAppointments.length}</p>
                   <FileText className="h-8 w-8 text-primary" />
                 </div>
               </CardContent>
@@ -52,11 +124,11 @@ const LawyerDashboard = () => {
 
             <Card className="hover-scale">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Cases Won</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Reviews</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <p className="text-3xl font-bold">150</p>
+                  <p className="text-3xl font-bold">{casesWon}</p>
                   <CheckCircle className="h-8 w-8 text-green-500" />
                 </div>
               </CardContent>
@@ -68,7 +140,7 @@ const LawyerDashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <p className="text-3xl font-bold">4.8</p>
+                  <p className="text-3xl font-bold">{rating}</p>
                   <Star className="h-8 w-8 fill-yellow-400 text-yellow-400" />
                 </div>
               </CardContent>
@@ -81,30 +153,38 @@ const LawyerDashboard = () => {
             <Card>
               <CardContent className="pt-6">
                 <div className="space-y-4">
-                  {clientRequests.map((request) => (
-                    <div key={request.id} className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent transition-colors">
-                      <div className="flex items-center gap-4">
-                        <Avatar className="h-12 w-12">
-                          <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${request.name}`} />
-                          <AvatarFallback>{request.name.split(" ").map(n => n[0]).join("")}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <h3 className="font-semibold">{request.name}</h3>
-                          <p className="text-sm text-muted-foreground">{request.caseType}</p>
-                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                            <Clock className="h-3 w-3" />
-                            {request.date}
-                          </p>
+                  {isRequestsLoading ? (
+                    <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                  ) : requests.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-4">No pending requests right now.</p>
+                  ) : (
+                    requests.map((request: any) => (
+                      <div key={request.id} className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent transition-colors">
+                        <div className="flex items-center gap-4">
+                          <Avatar className="h-12 w-12">
+                            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${request.clientName}`} />
+                            <AvatarFallback>{request.clientName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <h3 className="font-semibold">{request.clientName}</h3>
+                            <p className="text-sm text-muted-foreground">{request.caseCategory}</p>
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                              <Clock className="h-3 w-3" />
+                              {new Date(request.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Badge variant="default" className="capitalize">
+                            {request.status}
+                          </Badge>
+                          <Link to="/lawyer/client-requests">
+                            <Button size="sm">Review</Button>
+                          </Link>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <Badge variant={request.status === "new" ? "default" : "secondary"}>
-                          {request.status}
-                        </Badge>
-                        <Button size="sm">Review</Button>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -121,17 +201,13 @@ const LawyerDashboard = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="p-3 rounded-lg border border-border">
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-medium text-sm">Property Dispute Case #{i}</h4>
-                          <Badge variant="outline" className="text-xs">Match: 95%</Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground">Similar to your past successful cases</p>
-                      </div>
-                    ))}
+                    <div className="p-3 rounded-lg border border-border text-center py-6 text-muted-foreground text-sm">
+                      AI Case matching will appear here as you handle more cases.
+                    </div>
                   </div>
-                  <Button variant="link" className="w-full mt-4">View All Recommendations →</Button>
+                  <Link to="/lawyer/recommended-cases">
+                    <Button variant="link" className="w-full mt-4">View All Recommendations →</Button>
+                  </Link>
                 </CardContent>
               </Card>
 
